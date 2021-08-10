@@ -13,12 +13,19 @@ pub extern "C" fn dcgi_main(
     _headers: *const StringPair,
     _params: *const StringPair,
     _body: *const c_char,
-    _header_dest: *mut *mut StringPair,
+    header_dest: *mut *mut StringPair,
     data_dest: *mut *mut c_char,
     _err_dest: *mut *mut c_char
 ) -> c_int {
-    let data: CString = CString::new("Hello, DCGI!").unwrap();
+    let data: CString = CString::new("Hello, DCGI!\n").unwrap();
     let data: *mut c_char = data.into_raw();
-    unsafe { std::ptr::write(data_dest, data); }
+    let header: Box<StringPair> = Box::new(StringPair{
+        key: std::ptr::null(), value: std::ptr::null()
+    });
+    let header: *mut StringPair = Box::into_raw(header);
+    unsafe {
+        std::ptr::write(data_dest, data);
+        std::ptr::write(header_dest, header);
+    }
     0
 }
