@@ -10,7 +10,6 @@ name = "marionette"
 crate-type = ["cdylib"]
 
 [dependencies]
-serde = "1"
 
 [profile.dev]
 panic = "abort"

@@ -1,13 +1,15 @@
 pub mod marionette;
 pub mod qdb;
+pub mod util;
 
-use std::alloc::{Layout, dealloc};
+use std::alloc::{dealloc, Layout};
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr::write;
 
 use crate::marionette::route_and_handle;
+use crate::util::QResult;
 
 #[repr(C)]
 pub struct CStrPair {
@@ -45,7 +47,7 @@ impl HttpRequest {
         raw_headers: *const CStrPair,
         raw_params: *const CStrPair,
         raw_body: *const c_char
-    ) -> Result<Self, Box<dyn Error + 'static>> {
+    ) -> QResult<Self> {
         let query_path: String = raw_c_str_to_string(raw_query_path)?;
         let mut headers: Vec<(String, String)> = vec![];
         {
@@ -126,7 +128,7 @@ pub unsafe extern "C" fn dcgi_main(
     data_dest: *mut *mut c_char,
     err_dest: *mut *mut c_char
 ) -> c_int {
-    let dcgi_main_inner = move || -> Result<HttpResponse, Box<dyn Error + 'static>> {
+    let dcgi_main_inner = move || -> QResult<HttpResponse> {
         let request: HttpRequest = HttpRequest::from_dcgi_pack(
             query_path, headers, params, body
         )?;

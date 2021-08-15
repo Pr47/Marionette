@@ -1,5 +1,6 @@
-use std::error::Error;
-use std::io::Write;
+use std::io::{Read, Write};
+
+use crate::util::{QResult, read_string, read_byte, write_string, write_byte, read_option_string};
 
 pub const QDB_REQUEST_READ: u8 = 1;
 pub const QDB_REQUEST_WRITE: u8 = 2;
@@ -38,35 +39,48 @@ impl QDBRequest {
         }
     }
 
-    pub fn write<W: Write>(&self, mut output: W) -> Result<(), Box<dyn Error + 'static>> {
-        let namespace_len_buf: [u8; 8] = (self.namespace.len() as u64).to_le_bytes();
-        output.write_all(&namespace_len_buf)?;
-
-        match &self.body {
-            QDBRequestBody::Read { key } => {
-                output.write_all(&[QDB_REQUEST_READ])?;
-                let key_len_buf: [u8; 8] = (key.len() as u64).to_le_bytes();
-                output.write_all(&key_len_buf)?;
-                output.write_all(key.as_bytes())?;
+    pub fn read<R: Read>(mut input: R) -> QResult<Self> {
+        let namespace: String = read_string(&mut input)?;
+        let kind: u8 = read_byte(&mut input)?;
+        match kind {
+            0 => {
+                let key: String = read_string(&mut input)?;
+                Ok(Self::read_request(namespace, key))
             },
-            QDBRequestBody::Write { key, value, overwrite } => {
-                output.write_all(&[QDB_REQUEST_READ])?;
-                let key_len_buf: [u8; 8] = (key.len() as u64).to_le_bytes();
-                output.write_all(&key_len_buf)?;
-                output.write_all(key.as_bytes())?;
-                let value_len_buf: [u8; 8] = (value.len() as u64).to_le_bytes();
-                output.write_all(&value_len_buf)?;
-                output.write_all(value.as_bytes())?;
-                output.write_all(&[*overwrite as u8])?;
-            }
-            QDBRequestBody::Delete { key } => {
-                output.write_all(&[QDB_REQUEST_DELETE])?;
-                let key_len_buf: [u8; 8] = (key.len() as u64).to_le_bytes();
-                output.write_all(&key_len_buf)?;
-                output.write_all(key.as_bytes())?;
+            1 => {
+                let key: String = read_string(&mut input)?;
+                let value: String = read_string(&mut input)?;
+                let overwrite: bool = read_byte(&mut input)? == 0;
+                Ok(Self::write_request(namespace, key, value, overwrite))
+            },
+            2 => {
+                let key: String = read_string(&mut input)?;
+                Ok(Self::delete_request(namespace, key))
+            },
+            _ => {
+                Err("[qdb/protocol] Invalid request type".to_string().into())
             }
         }
+    }
 
+    pub fn write<W: Write>(&self, mut output: W) -> QResult<()> {
+        write_string(&mut output, &self.namespace)?;
+        match &self.body {
+            QDBRequestBody::Read { key } => {
+                write_byte(&mut output, QDB_REQUEST_READ)?;
+                write_string(&mut output, key)?;
+            },
+            QDBRequestBody::Write { key, value, overwrite } => {
+                write_byte(&mut output, QDB_REQUEST_WRITE)?;
+                write_string(&mut output, key)?;
+                write_string(&mut output, value)?;
+                write_byte(&mut output, *overwrite as u8)?;
+            }
+            QDBRequestBody::Delete { key } => {
+                write_byte(&mut output, QDB_REQUEST_DELETE)?;
+                write_string(&mut output, key)?;
+            }
+        }
         Ok(())
     }
 }
@@ -100,5 +114,12 @@ impl QDBResponse {
             message: Some(reason),
             result: None
         }
+    }
+
+    pub fn read<R: Read>(mut input: R) -> QResult<Self> {
+        let success: bool = read_byte(&mut input)? != 0;
+        let message: Option<String> = read_option_string(&mut input)?;
+        let result: Option<String> = read_option_string(&mut input)?;
+        Ok(Self { success, message, result })
     }
 }
