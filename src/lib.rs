@@ -1,6 +1,13 @@
-use std::ffi::{CString, CStr};
-use std::os::raw::{c_char, c_int};
+pub mod marionette;
+pub mod qdb;
+
+use std::alloc::{Layout, dealloc};
 use std::error::Error;
+use std::ffi::{CStr, CString};
+use std::os::raw::{c_char, c_int};
+use std::ptr::write;
+
+use crate::marionette::route_and_handle;
 
 #[repr(C)]
 pub struct CStrPair {
@@ -104,24 +111,41 @@ impl HttpResponse {
 }
 
 #[no_mangle]
-pub extern "C" fn dcgi_main(
-    _query_path: *const c_char,
-    _headers: *const CStrPair,
-    _params: *const CStrPair,
-    _body: *const c_char,
+pub unsafe extern "C" fn dcgi_dealloc(ptr: *mut u8, size: c_int, align: c_int) {
+    let layout: Layout = Layout::from_size_align(size as usize, align as usize).unwrap();
+    dealloc(ptr, layout);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn dcgi_main(
+    query_path: *const c_char,
+    headers: *const CStrPair,
+    params: *const CStrPair,
+    body: *const c_char,
     header_dest: *mut *mut CStrPair,
     data_dest: *mut *mut c_char,
-    _err_dest: *mut *mut c_char
+    err_dest: *mut *mut c_char
 ) -> c_int {
-    let data: CString = CString::new("Hello, DCGI!\n").unwrap();
-    let data: *mut c_char = data.into_raw();
-    let header: Box<CStrPair> = Box::new(CStrPair {
-        key: std::ptr::null(), value: std::ptr::null()
-    });
-    let header: *mut CStrPair = Box::into_raw(header);
-    unsafe {
-        std::ptr::write(data_dest, data);
-        std::ptr::write(header_dest, header);
+    let dcgi_main_inner = move || -> Result<HttpResponse, Box<dyn Error + 'static>> {
+        let request: HttpRequest = HttpRequest::from_dcgi_pack(
+            query_path, headers, params, body
+        )?;
+        route_and_handle(request)
+    };
+
+    match dcgi_main_inner() {
+        Ok(mut response) => {
+            response.headers.shrink_to_fit();
+            response.body.shrink_to_fit();
+            response.write_to_dcgi_pack(header_dest, data_dest);
+            200
+        },
+        Err(e) => {
+            let err_msg: String = e.to_string();
+            let err_msg: CString = CString::new(err_msg).unwrap();
+            let err_msg: *mut c_char = err_msg.into_raw();
+            write(err_dest, err_msg);
+            500
+        }
     }
-    0
 }

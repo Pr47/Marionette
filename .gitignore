@@ -17,3 +17,7 @@ Cargo.lock
 /target
 
 .idea
+
+# Testing stuff
+chttpd
+config.pl2
