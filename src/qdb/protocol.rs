@@ -1,15 +1,27 @@
 use std::io::{Read, Write};
 
-use crate::util::{QResult, read_string, read_byte, write_string, write_byte, read_option_string};
+use crate::util::{
+    QResult,
+    read_byte,
+    read_option_string,
+    read_string,
+    write_byte,
+    write_option_string,
+    write_string
+};
 
 pub const QDB_REQUEST_READ: u8 = 1;
 pub const QDB_REQUEST_WRITE: u8 = 2;
 pub const QDB_REQUEST_DELETE: u8 = 3;
+pub const QDB_REQUEST_CREATE_NAMESPACE: u8 = 4;
+pub const QDB_REQUEST_DELETE_NAMESPACE: u8 = 5;
 
 pub enum QDBRequestBody {
     Read { key: String },
     Write { key: String, value: String, overwrite: bool },
-    Delete { key: String }
+    Delete { key: String },
+    CreateNamespace,
+    DeleteNamespace
 }
 
 pub struct QDBRequest {
@@ -39,23 +51,43 @@ impl QDBRequest {
         }
     }
 
+    pub fn create_namespace(namespace: String) -> Self {
+        Self {
+            namespace,
+            body: QDBRequestBody::CreateNamespace
+        }
+    }
+
+    pub fn delete_namespace(namespace: String) -> Self {
+        Self {
+            namespace,
+            body: QDBRequestBody::DeleteNamespace
+        }
+    }
+
     pub fn read<R: Read>(mut input: R) -> QResult<Self> {
         let namespace: String = read_string(&mut input)?;
         let kind: u8 = read_byte(&mut input)?;
         match kind {
-            0 => {
+            QDB_REQUEST_READ => {
                 let key: String = read_string(&mut input)?;
                 Ok(Self::read_request(namespace, key))
             },
-            1 => {
+            QDB_REQUEST_WRITE => {
                 let key: String = read_string(&mut input)?;
                 let value: String = read_string(&mut input)?;
                 let overwrite: bool = read_byte(&mut input)? == 0;
                 Ok(Self::write_request(namespace, key, value, overwrite))
             },
-            2 => {
+            QDB_REQUEST_DELETE => {
                 let key: String = read_string(&mut input)?;
                 Ok(Self::delete_request(namespace, key))
+            },
+            QDB_REQUEST_CREATE_NAMESPACE => {
+                Ok(Self::create_namespace(namespace))
+            },
+            QDB_REQUEST_DELETE_NAMESPACE => {
+                Ok(Self::delete_namespace(namespace))
             },
             _ => {
                 Err("[qdb/protocol] Invalid request type".to_string().into())
@@ -79,6 +111,12 @@ impl QDBRequest {
             QDBRequestBody::Delete { key } => {
                 write_byte(&mut output, QDB_REQUEST_DELETE)?;
                 write_string(&mut output, key)?;
+            }
+            QDBRequestBody::CreateNamespace => {
+                write_byte(&mut output, QDB_REQUEST_CREATE_NAMESPACE)?;
+            }
+            QDBRequestBody::DeleteNamespace => {
+                write_byte(&mut output, QDB_REQUEST_DELETE_NAMESPACE)?;
             }
         }
         Ok(())
@@ -121,5 +159,12 @@ impl QDBResponse {
         let message: Option<String> = read_option_string(&mut input)?;
         let result: Option<String> = read_option_string(&mut input)?;
         Ok(Self { success, message, result })
+    }
+
+    pub fn write<W: Write>(&self, mut output: W) -> QResult<()> {
+        write_byte(&mut output, self.success as u8)?;
+        write_option_string(&mut output, &self.message)?;
+        write_option_string(&mut output, &self.result)?;
+        Ok(())
     }
 }
