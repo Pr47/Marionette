@@ -1,14 +1,20 @@
-pub mod marionette;
-pub mod qdb;
+pub mod controller;
+pub mod filter;
+pub mod route;
+pub mod service;
 pub mod util;
 
 use std::alloc::{dealloc, Layout};
+use std::env;
 use std::error::Error;
 use std::ffi::{CStr, CString};
 use std::os::raw::{c_char, c_int};
 use std::ptr::write;
+use std::sync::Once;
 
-use crate::marionette::route_and_handle;
+use log::debug;
+
+use crate::route::route_and_handle;
 use crate::util::QResult;
 
 #[repr(C)]
@@ -30,6 +36,7 @@ impl CStrPair {
     }
 }
 
+#[derive(Debug)]
 pub struct HttpRequest {
     pub query_path: String,
     pub headers: Vec<(String, String)>,
@@ -37,7 +44,9 @@ pub struct HttpRequest {
     pub body: String
 }
 
-unsafe fn raw_c_str_to_string(raw_c_str: *const c_char) -> Result<String, Box<dyn Error + 'static>> {
+unsafe fn raw_c_str_to_string(raw_c_str: *const c_char)
+    -> Result<String, Box<dyn Error + 'static>>
+{
     Ok(CStr::from_ptr(raw_c_str).to_str()?.to_string())
 }
 
@@ -79,14 +88,24 @@ impl HttpRequest {
     }
 }
 
+#[derive(Debug)]
 pub struct HttpResponse {
+    code: u32,
     headers: Vec<(String, String)>,
     body: String
 }
 
 impl HttpResponse {
     pub fn new(headers: Vec<(String, String)>, body: String) -> Self {
-        Self { headers, body }
+        Self::with_code(200, headers, body)
+    }
+
+    pub fn with_code(code: u32, headers: Vec<(String, String)>, body: String) -> Self {
+        Self {
+            code,
+            headers,
+            body
+        }
     }
 
     pub unsafe fn write_to_dcgi_pack(
@@ -118,6 +137,8 @@ pub unsafe extern "C" fn dcgi_dealloc(ptr: *mut u8, size: c_int, align: c_int) {
     dealloc(ptr, layout);
 }
 
+static INIT_ENV_LOGGER: Once = Once::new();
+
 #[no_mangle]
 pub unsafe extern "C" fn dcgi_main(
     query_path: *const c_char,
@@ -128,21 +149,30 @@ pub unsafe extern "C" fn dcgi_main(
     data_dest: *mut *mut c_char,
     err_dest: *mut *mut c_char
 ) -> c_int {
+    INIT_ENV_LOGGER.call_once(|| {
+        eprintln!("initializing event logger");
+        env::set_var("RUST_LOG", "debug");
+        env_logger::init();
+    });
+
     let dcgi_main_inner = move || -> QResult<HttpResponse> {
         let request: HttpRequest = HttpRequest::from_dcgi_pack(
             query_path, headers, params, body
         )?;
+        debug!("accepting request: {:?}", request);
         route_and_handle(request)
     };
 
     match dcgi_main_inner() {
         Ok(mut response) => {
+            debug!("sending response: {:?}", response);
             response.headers.shrink_to_fit();
             response.body.shrink_to_fit();
             response.write_to_dcgi_pack(header_dest, data_dest);
-            200
+            response.code as c_int
         },
         Err(e) => {
+            debug!("sending error: {}", e);
             let err_msg: String = e.to_string();
             let err_msg: CString = CString::new(err_msg).unwrap();
             let err_msg: *mut c_char = err_msg.into_raw();
