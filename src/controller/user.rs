@@ -1,6 +1,6 @@
 use serde::{Serialize, Deserialize};
 
-use crate::{HttpRequest, HttpResponse};
+use crate::{HttpRequest, HttpResponse, HttpMethod};
 use crate::util::{QResult, ResponseUtil, uuid};
 use crate::service::user::USER_SERVICE;
 
@@ -19,6 +19,10 @@ struct LoginResponse {
 }
 
 pub fn user_login(http_request: HttpRequest) -> QResult<HttpResponse> {
+    if http_request.method == HttpMethod::Get {
+        return Ok(HttpResponse::with_code(403, vec![], "cannot GET /api/login".into()))
+    }
+
     let login_request = serde_json::from_str::<LoginRequest>(&http_request.body)?;
     let mut user_service = USER_SERVICE.lock().unwrap();
     Ok(

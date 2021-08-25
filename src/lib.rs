@@ -8,6 +8,7 @@ use std::alloc::{dealloc, Layout};
 use std::env;
 use std::error::Error;
 use std::ffi::{CStr, CString};
+use std::mem::transmute;
 use std::os::raw::{c_char, c_int};
 use std::ptr::write;
 use std::sync::Once;
@@ -36,8 +37,16 @@ impl CStrPair {
     }
 }
 
+#[derive(Debug, Eq, PartialEq)]
+#[repr(i32)]
+pub enum HttpMethod {
+    Get = 0,
+    Post = 1
+}
+
 #[derive(Debug)]
 pub struct HttpRequest {
+    pub method: HttpMethod,
     pub query_path: String,
     pub headers: Vec<(String, String)>,
     pub params: Vec<(String, String)>,
@@ -52,6 +61,7 @@ unsafe fn raw_c_str_to_string(raw_c_str: *const c_char)
 
 impl HttpRequest {
     pub unsafe fn from_dcgi_pack(
+        method: c_int,
         raw_query_path: *const c_char,
         raw_headers: *const CStrPair,
         raw_params: *const CStrPair,
@@ -84,7 +94,13 @@ impl HttpRequest {
         }
         let body: String = raw_c_str_to_string(raw_body)?;
 
-        Ok(Self { query_path, headers, params, body })
+        Ok(Self {
+            method: transmute::<u32, HttpMethod>(method as u32),
+            query_path,
+            headers,
+            params,
+            body
+        })
     }
 }
 
@@ -141,6 +157,7 @@ static INIT_ENV_LOGGER: Once = Once::new();
 
 #[no_mangle]
 pub unsafe extern "C" fn dcgi_main(
+    method: c_int,
     query_path: *const c_char,
     headers: *const CStrPair,
     params: *const CStrPair,
@@ -157,7 +174,7 @@ pub unsafe extern "C" fn dcgi_main(
 
     let dcgi_main_inner = move || -> QResult<HttpResponse> {
         let request: HttpRequest = HttpRequest::from_dcgi_pack(
-            query_path, headers, params, body
+            method, query_path, headers, params, body
         )?;
         debug!("accepting request: {:?}", request);
         route_and_handle(request)
