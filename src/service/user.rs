@@ -2,7 +2,7 @@ use std::collections::HashMap;
 use std::sync::Mutex;
 
 use lazy_static::lazy_static;
-use log::error;
+use log::{debug, error};
 use serde::{Serialize, Deserialize};
 
 use crate::util::QResult;
@@ -31,10 +31,13 @@ impl UserService {
         })
     }
 
-    pub fn check_user_login(&self, user_name: String, user_token: String) -> bool {
+    pub fn check_user_login(&self, user_name: &str, user_token: &str) -> bool {
+        debug!("self.login_users = {:?}", self.login_users);
+        debug!("user_name = {}", user_name);
+        debug!("user_token = {}", user_token);
         self.login_users
-            .get(&user_name)
-            .map_or(false, |token| token == &user_token)
+            .get(user_name)
+            .map_or(false, |token| token == user_token)
     }
 
     pub fn user_login(&mut self, user_name: String, user_token: String) {

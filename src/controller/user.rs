@@ -1,7 +1,7 @@
 use serde::{Serialize, Deserialize};
 
 use crate::{HttpRequest, HttpResponse, HttpMethod};
-use crate::util::{QResult, ResponseUtil, uuid};
+use crate::util::{QResult, ResponseUtil, uuid, content_type_json};
 use crate::service::user::USER_SERVICE;
 
 #[derive(Deserialize)]
@@ -34,12 +34,21 @@ pub fn user_login(http_request: HttpRequest) -> QResult<HttpResponse> {
                     access_token: access_token.clone()
                 };
                 user_service.user_login(login_request.user_name, access_token);
-                HttpResponse::new(vec![], ResponseUtil::data(resp))
+                HttpResponse::new(
+                    vec![content_type_json()],
+                    ResponseUtil::data(resp)
+                )
             } else {
-                HttpResponse::new(vec![], ResponseUtil::error("用户名或密码错误"))
+                HttpResponse::new(
+                    vec![content_type_json()],
+                    ResponseUtil::error("用户名或密码错误")
+                )
             }
         } else {
-            HttpResponse::new(vec![], ResponseUtil::error("用户名或密码错误"))
+            HttpResponse::new(
+                vec![content_type_json()],
+                ResponseUtil::error("用户名或密码错误")
+            )
         }
     )
 }

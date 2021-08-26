@@ -7,10 +7,10 @@ pub type QError = Box<dyn Error + 'static>;
 
 pub type QResult<T> = Result<T, QError>;
 
-pub fn to_headers_map(input: Vec<(String, String)>) -> HashMap<String, String> {
+pub fn to_headers_map(input: &Vec<(String, String)>) -> HashMap<String, String> {
     let mut ret = HashMap::new();
-    for (k, v) in input.into_iter() {
-        ret.insert(k.to_lowercase(), v);
+    for (k, v) in input.iter() {
+        ret.insert(k.to_lowercase(), v.to_string());
     }
     ret
 }
@@ -54,4 +54,12 @@ impl ResponseUtil {
 
 pub fn uuid() -> String {
     uuid::Uuid::new_v4().to_string()
+}
+
+pub fn content_type_text() -> (String, String) {
+    ("Content-Type".into(), "text/plain; charset=utf-8".into())
+}
+
+pub fn content_type_json() -> (String, String) {
+    ("Content-Type".into(), "application/json; charset=utf-8".into())
 }
